@@ -7,6 +7,10 @@ node_modules/
 dist/
 build/
 
+# VitePress
+docs/.vitepress/cache/
+docs/.vitepress/dist/
+
 # Testing
 coverage/
 
