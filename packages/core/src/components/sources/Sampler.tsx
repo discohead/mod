@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, ReactNode, useImperativeHandle, useState } from 'react';
+import React, { useEffect, useRef, ReactNode, useImperativeHandle, useState, useCallback } from 'react';
 import { useAudioContext } from '../../context/AudioContext';
 import { ModStreamRef } from '../../types/ModStream';
 import { useControlledState } from '../../hooks/useControlledState';
@@ -208,6 +208,10 @@ export const Sampler = React.forwardRef<SamplerHandle, SamplerProps>(({
 }, ref) => {
   const audioContext = useAudioContext();
 
+  // ============================================
+  // State
+  // ============================================
+
   // Controlled state
   const [playbackRate, setPlaybackRate] = useControlledState(controlledPlaybackRate, 1.0, onPlaybackRateChange);
   const [detune, setDetune] = useControlledState(controlledDetune, 0, onDetuneChange);
@@ -227,7 +231,10 @@ export const Sampler = React.forwardRef<SamplerHandle, SamplerProps>(({
   const [numberOfChannels, setNumberOfChannels] = useState<number | null>(null);
   const [activeVoices, setActiveVoices] = useState(0);
 
+  // ============================================
   // Refs
+  // ============================================
+
   const gainNodeRef = useRef<GainNode | null>(null);
   const audioBufferRef = useRef<AudioBuffer | null>(null);
   const voicesRef = useRef<Map<string, Voice>>(new Map());
@@ -241,54 +248,12 @@ export const Sampler = React.forwardRef<SamplerHandle, SamplerProps>(({
   // Computed
   const isPlaying = activeVoices > 0;
 
-  // Create output gain node
-  useEffect(() => {
-    if (!audioContext) return;
+  // ============================================
+  // Callback Functions (defined before effects)
+  // ============================================
 
-    const gainNode = audioContext.createGain();
-    gainNode.gain.value = gain;
-    gainNodeRef.current = gainNode;
-
-    output.current = {
-      audioNode: gainNode,
-      gain: gainNode,
-      context: audioContext,
-      metadata: {
-        label,
-        sourceType: 'sampler',
-      },
-    };
-
-    return () => {
-      gainNode.disconnect();
-      output.current = null;
-      gainNodeRef.current = null;
-    };
-  }, [audioContext, label]);
-
-  // Update gain
-  useEffect(() => {
-    if (gainNodeRef.current) {
-      gainNodeRef.current.gain.value = gain;
-    }
-  }, [gain]);
-
-  // Load from src prop
-  useEffect(() => {
-    if (src && audioContext) {
-      loadUrl(src);
-    }
-  }, [src, audioContext]);
-
-  // Stop all voices when enabled becomes false
-  useEffect(() => {
-    if (!enabled) {
-      stopAllVoices();
-    }
-  }, [enabled]);
-
-  // Helper to stop all voices (used by enabled effect and stopAll)
-  const stopAllVoices = (): void => {
+  // Helper to stop all voices
+  const stopAllVoices = useCallback((): void => {
     voicesRef.current.forEach((voice) => {
       try {
         voice.source.stop();
@@ -298,105 +263,16 @@ export const Sampler = React.forwardRef<SamplerHandle, SamplerProps>(({
     });
     voicesRef.current.clear();
     setActiveVoices(0);
-  };
-
-  // Gate input detection
-  useEffect(() => {
-    if (!gate?.current?.audioNode || !audioContext) return;
-
-    const gateNode = gate.current.audioNode;
-    const analyser = audioContext.createAnalyser();
-    analyser.fftSize = 128;
-    analyser.smoothingTimeConstant = 0;
-    gateAnalyserRef.current = analyser;
-
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-
-    gateNode.connect(analyser);
-
-    const checkGate = () => {
-      analyser.getByteTimeDomainData(dataArray);
-
-      // Find max amplitude
-      let max = 0;
-      for (let i = 0; i < bufferLength; i++) {
-        const value = Math.abs(dataArray[i] - 128);
-        if (value > max) max = value;
-      }
-
-      const isGateHigh = max > 20;
-
-      // Rising edge - trigger
-      if (isGateHigh && !lastGateStateRef.current) {
-        trigger();
-      }
-      // Falling edge - stop (only in gate mode)
-      else if (!isGateHigh && lastGateStateRef.current && gateMode === 'gate') {
-        stopAllVoices();
-      }
-
-      lastGateStateRef.current = isGateHigh;
-    };
-
-    gateIntervalRef.current = window.setInterval(checkGate, 1);
-
-    return () => {
-      if (gateIntervalRef.current !== null) {
-        clearInterval(gateIntervalRef.current);
-        gateIntervalRef.current = null;
-      }
-      try {
-        analyser.disconnect();
-      } catch {
-        // Already disconnected
-      }
-      gateAnalyserRef.current = null;
-    };
-  }, [gate?.current, audioContext, gateMode, enabled, isLoaded]);
-
-  // CV modulation
-  useEffect(() => {
-    if (!cv?.current || !audioContext) return;
-
-    // CV modulation for Sampler works differently than Filter because
-    // AudioBufferSourceNode is created per-voice. We store the CV connection
-    // info and apply it to each new voice in trigger().
-    const cvGain = audioContext.createGain();
-    cvGain.gain.value = cvAmount;
-    cvGainRef.current = cvGain;
-
-    // Connect CV source to scaling gain
-    cv.current.gain.connect(cvGain);
-
-    return () => {
-      if (cvGain && cv.current) {
-        try {
-          cv.current.gain.disconnect(cvGain);
-          cvGain.disconnect();
-        } catch {
-          // Already disconnected
-        }
-      }
-      cvGainRef.current = null;
-    };
-  }, [cv?.current, audioContext]);
-
-  // Update CV amount
-  useEffect(() => {
-    if (cvGainRef.current) {
-      cvGainRef.current.gain.value = cvAmount;
-    }
-  }, [cvAmount]);
+  }, []);
 
   // Generate unique voice ID
-  const generateVoiceId = (): string => {
+  const generateVoiceId = useCallback((): string => {
     voiceIdCounterRef.current += 1;
     return `voice-${voiceIdCounterRef.current}`;
-  };
+  }, []);
 
   // Trigger function
-  const trigger = (options: TriggerOptions = {}): string | null => {
+  const trigger = useCallback((options: TriggerOptions = {}): string | null => {
     if (!audioContext || !audioBufferRef.current || !gainNodeRef.current || !enabled) {
       return null;
     }
@@ -494,19 +370,19 @@ export const Sampler = React.forwardRef<SamplerHandle, SamplerProps>(({
 
     onTrigger?.(voiceId);
     return voiceId;
-  };
+  }, [audioContext, enabled, maxPolyphony, voiceStealingMode, generateVoiceId, playbackRate, detune, loop, loopStart, loopEnd, cvTarget, onEnd, onTrigger]);
 
   // Trigger note (MIDI)
-  const triggerNote = (
+  const triggerNote = useCallback((
     midiNote: number,
     options: Omit<TriggerOptions, 'playbackRate'> = {}
   ): string | null => {
     const rate = midiNoteToPlaybackRate(midiNote, rootNote);
     return trigger({ ...options, playbackRate: rate });
-  };
+  }, [rootNote, trigger]);
 
   // Stop function
-  const stop = (voiceId?: string): void => {
+  const stop = useCallback((voiceId?: string): void => {
     const id = voiceId ?? lastVoiceIdRef.current;
     if (!id) return;
 
@@ -520,15 +396,36 @@ export const Sampler = React.forwardRef<SamplerHandle, SamplerProps>(({
       voicesRef.current.delete(id);
       setActiveVoices(voicesRef.current.size);
     }
-  };
+  }, []);
 
-  // Stop all voices
-  const stopAll = (): void => {
+  // Stop all voices (public API)
+  const stopAll = useCallback((): void => {
     stopAllVoices();
-  };
+  }, [stopAllVoices]);
+
+  // Load from ArrayBuffer
+  const loadBuffer = useCallback(async (buffer: ArrayBuffer): Promise<void> => {
+    if (!audioContext) return;
+
+    try {
+      const audioBuffer = await audioContext.decodeAudioData(buffer);
+      audioBufferRef.current = audioBuffer;
+      setDuration(audioBuffer.duration);
+      setSampleRate(audioBuffer.sampleRate);
+      setNumberOfChannels(audioBuffer.numberOfChannels);
+      setIsLoaded(true);
+      setIsLoading(false);
+      onLoad?.(audioBuffer.duration);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to decode audio';
+      setError(message);
+      setIsLoading(false);
+      onError?.(message);
+    }
+  }, [audioContext, onLoad, onError]);
 
   // Load from URL
-  const loadUrl = async (url: string): Promise<void> => {
+  const loadUrl = useCallback(async (url: string): Promise<void> => {
     if (!audioContext) return;
 
     setIsLoading(true);
@@ -548,10 +445,10 @@ export const Sampler = React.forwardRef<SamplerHandle, SamplerProps>(({
       setIsLoading(false);
       onError?.(message);
     }
-  };
+  }, [audioContext, onLoadStart, loadBuffer, onError]);
 
   // Load from File
-  const loadFile = async (file: File): Promise<void> => {
+  const loadFile = useCallback(async (file: File): Promise<void> => {
     if (!audioContext) return;
 
     setIsLoading(true);
@@ -567,31 +464,10 @@ export const Sampler = React.forwardRef<SamplerHandle, SamplerProps>(({
       setIsLoading(false);
       onError?.(message);
     }
-  };
-
-  // Load from ArrayBuffer
-  const loadBuffer = async (buffer: ArrayBuffer): Promise<void> => {
-    if (!audioContext) return;
-
-    try {
-      const audioBuffer = await audioContext.decodeAudioData(buffer);
-      audioBufferRef.current = audioBuffer;
-      setDuration(audioBuffer.duration);
-      setSampleRate(audioBuffer.sampleRate);
-      setNumberOfChannels(audioBuffer.numberOfChannels);
-      setIsLoaded(true);
-      setIsLoading(false);
-      onLoad?.(audioBuffer.duration);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to decode audio';
-      setError(message);
-      setIsLoading(false);
-      onError?.(message);
-    }
-  };
+  }, [audioContext, onLoadStart, loadBuffer, onError]);
 
   // Get state
-  const getState = (): SamplerState => ({
+  const getState = useCallback((): SamplerState => ({
     playbackRate,
     detune,
     gain,
@@ -605,9 +481,151 @@ export const Sampler = React.forwardRef<SamplerHandle, SamplerProps>(({
     activeVoices,
     duration,
     error,
-  });
+  }), [playbackRate, detune, gain, loop, loopStart, loopEnd, enabled, isLoaded, isLoading, isPlaying, activeVoices, duration, error]);
 
-  // Expose imperative handle
+  // ============================================
+  // Effects (defined after callbacks)
+  // ============================================
+
+  // Create output gain node
+  useEffect(() => {
+    if (!audioContext) return;
+
+    const gainNode = audioContext.createGain();
+    gainNode.gain.value = gain;
+    gainNodeRef.current = gainNode;
+
+    output.current = {
+      audioNode: gainNode,
+      gain: gainNode,
+      context: audioContext,
+      metadata: {
+        label,
+        sourceType: 'sampler',
+      },
+    };
+
+    return () => {
+      gainNode.disconnect();
+      output.current = null;
+      gainNodeRef.current = null;
+    };
+  }, [audioContext, label]);
+
+  // Update gain
+  useEffect(() => {
+    if (gainNodeRef.current) {
+      gainNodeRef.current.gain.value = gain;
+    }
+  }, [gain]);
+
+  // Load from src prop
+  useEffect(() => {
+    if (src && audioContext) {
+      loadUrl(src);
+    }
+  }, [src, audioContext, loadUrl]);
+
+  // Stop all voices when enabled becomes false
+  useEffect(() => {
+    if (!enabled) {
+      stopAllVoices();
+    }
+  }, [enabled, stopAllVoices]);
+
+  // Gate input detection
+  useEffect(() => {
+    if (!gate?.current?.audioNode || !audioContext) return;
+
+    const gateNode = gate.current.audioNode;
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 128;
+    analyser.smoothingTimeConstant = 0;
+    gateAnalyserRef.current = analyser;
+
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+
+    gateNode.connect(analyser);
+
+    const checkGate = () => {
+      analyser.getByteTimeDomainData(dataArray);
+
+      // Find max amplitude
+      let max = 0;
+      for (let i = 0; i < bufferLength; i++) {
+        const value = Math.abs(dataArray[i] - 128);
+        if (value > max) max = value;
+      }
+
+      const isGateHigh = max > 20;
+
+      // Rising edge - trigger
+      if (isGateHigh && !lastGateStateRef.current) {
+        trigger();
+      }
+      // Falling edge - stop (only in gate mode)
+      else if (!isGateHigh && lastGateStateRef.current && gateMode === 'gate') {
+        stopAllVoices();
+      }
+
+      lastGateStateRef.current = isGateHigh;
+    };
+
+    gateIntervalRef.current = window.setInterval(checkGate, 10);
+
+    return () => {
+      if (gateIntervalRef.current !== null) {
+        clearInterval(gateIntervalRef.current);
+        gateIntervalRef.current = null;
+      }
+      try {
+        analyser.disconnect();
+      } catch {
+        // Already disconnected
+      }
+      gateAnalyserRef.current = null;
+    };
+  }, [gate?.current, audioContext, gateMode, stopAllVoices, trigger]);
+
+  // CV modulation
+  useEffect(() => {
+    if (!cv?.current || !audioContext) return;
+
+    // CV modulation for Sampler works differently than Filter because
+    // AudioBufferSourceNode is created per-voice. We store the CV connection
+    // info and apply it to each new voice in trigger().
+    const cvGain = audioContext.createGain();
+    cvGain.gain.value = cvAmount;
+    cvGainRef.current = cvGain;
+
+    // Connect CV source to scaling gain
+    cv.current.gain.connect(cvGain);
+
+    return () => {
+      if (cvGain && cv.current) {
+        try {
+          cv.current.gain.disconnect(cvGain);
+          cvGain.disconnect();
+        } catch {
+          // Already disconnected
+        }
+      }
+      cvGainRef.current = null;
+    };
+  }, [cv?.current, audioContext]);
+
+  // Update CV amount
+  useEffect(() => {
+    if (cvGainRef.current) {
+      cvGainRef.current.gain.value = cvAmount;
+    }
+  }, [cvAmount]);
+
+  // ============================================
+  // Imperative Handle
+  // ============================================
+
   useImperativeHandle(ref, () => ({
     trigger,
     triggerNote,
@@ -617,9 +635,12 @@ export const Sampler = React.forwardRef<SamplerHandle, SamplerProps>(({
     loadUrl,
     loadBuffer,
     getState,
-  }), [audioContext, playbackRate, detune, gain, loop, loopStart, loopEnd, enabled, isLoaded, isLoading, isPlaying, activeVoices, duration, error]);
+  }), [trigger, triggerNote, stop, stopAll, loadFile, loadUrl, loadBuffer, getState]);
 
+  // ============================================
   // Render
+  // ============================================
+
   if (children) {
     return <>{children({
       isLoaded,

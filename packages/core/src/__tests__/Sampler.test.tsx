@@ -50,12 +50,6 @@ const createMockArrayBuffer = (size = 1024): ArrayBuffer => {
   return new ArrayBuffer(size);
 };
 
-// Mock File for testing
-const createMockFile = (name = 'test.wav', type = 'audio/wav'): File => {
-  const buffer = createMockArrayBuffer();
-  return new File([buffer], name, { type });
-};
-
 describe('Sampler', () => {
   // ============================================
   // Section 1: Render Props Pattern (11 tests)
@@ -1860,38 +1854,6 @@ describe('Sampler', () => {
     });
 
     it('should handle invalid audio data', async () => {
-      const mockDecodeError = new Error('Unable to decode audio data');
-      const mockAudioContext = {
-        createGain: () => ({
-          connect: jest.fn(),
-          disconnect: jest.fn(),
-          gain: { value: 1, setValueAtTime: jest.fn() },
-        }),
-        createBufferSource: () => ({
-          connect: jest.fn(),
-          disconnect: jest.fn(),
-          start: jest.fn(),
-          stop: jest.fn(),
-          buffer: null,
-          playbackRate: { value: 1, setValueAtTime: jest.fn() },
-          detune: { value: 0, setValueAtTime: jest.fn() },
-          loop: false,
-          loopStart: 0,
-          loopEnd: 0,
-          onended: null,
-        }),
-        createAnalyser: () => ({
-          connect: jest.fn(),
-          disconnect: jest.fn(),
-          fftSize: 128,
-          smoothingTimeConstant: 0,
-          frequencyBinCount: 64,
-          getByteTimeDomainData: jest.fn(),
-        }),
-        decodeAudioData: jest.fn().mockRejectedValue(mockDecodeError),
-        currentTime: 0,
-      };
-
       global.fetch = jest.fn().mockResolvedValue({
         ok: true,
         arrayBuffer: () => Promise.resolve(new ArrayBuffer(1024)),
