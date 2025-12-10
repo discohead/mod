@@ -126,6 +126,7 @@ function ModularSynth() {
       ports.push({ id: `${id}-cv-gate`, type: 'input', label: 'Gate' });
     } else if (type === 'Sampler') {
       ports.push({ id: `${id}-cv-gate`, type: 'input', label: 'Gate' });
+      ports.push({ id: `${id}-cv-rate`, type: 'input', label: 'CV' });
     }
 
     // Create output ports based on definition

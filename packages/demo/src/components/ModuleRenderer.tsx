@@ -1161,9 +1161,11 @@ export const ModuleRenderer: React.FC<ModuleRendererProps> = ({
         </StreamingAudioDeck>
       ) : null;
 
-    case 'Sampler':
+    case 'Sampler': {
+      const gateInput = cvInputStreams['cv-gate'] ?? undefined;
+      const cvInput = cvInputStreams['cv-rate'] ?? undefined;
       return output ? (
-        <Sampler output={output} gate={cv} enabled={enabled}>
+        <Sampler output={output} gate={gateInput} cv={cvInput} enabled={enabled}>
           {(controls) => (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <ModUIFilePicker
@@ -1186,6 +1188,15 @@ export const ModuleRenderer: React.FC<ModuleRendererProps> = ({
                 value={controls.playbackRate}
                 onChange={controls.setPlaybackRate}
                 min={0.25}
+                max={4}
+                step={0.01}
+                formatValue={(v) => `${v.toFixed(2)}x`}
+              />
+              <ModUISlider
+                label="CV Amount"
+                value={controls.cvAmount}
+                onChange={controls.setCvAmount}
+                min={0}
                 max={4}
                 step={0.01}
                 formatValue={(v) => `${v.toFixed(2)}x`}
@@ -1221,6 +1232,7 @@ export const ModuleRenderer: React.FC<ModuleRendererProps> = ({
           )}
         </Sampler>
       ) : null;
+    }
 
     case 'Oscilloscope':
       return input ? (
