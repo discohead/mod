@@ -1250,6 +1250,93 @@ describe('Sampler', () => {
       });
       // Component handles rapid gate state changes via interval polling
     });
+
+    it('should use updated playbackRate for subsequent gate triggers (regression test)', async () => {
+      // This test verifies the fix for a bug where gate-triggered playback
+      // would always use the playbackRate from the first trigger, ignoring
+      // subsequent changes to the playbackRate parameter.
+      //
+      // The bug occurred because the gate detection setInterval callback captured
+      // a stale reference to the trigger function. This test simulates that by
+      // storing a reference to the trigger function and calling it after state changes,
+      // similar to how the gate interval works.
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(1024)),
+      });
+
+      // Track playbackRate values set on each triggered voice
+      const capturedPlaybackRates: number[] = [];
+      const originalCreateBufferSource = AudioContext.prototype.createBufferSource;
+      jest.spyOn(AudioContext.prototype, 'createBufferSource').mockImplementation(function(this: AudioContext) {
+        const source = originalCreateBufferSource.call(this);
+        // Intercept playbackRate.value assignment
+        let _playbackRate = 1;
+        Object.defineProperty(source.playbackRate, 'value', {
+          get: () => _playbackRate,
+          set: (v: number) => {
+            _playbackRate = v;
+            capturedPlaybackRates.push(v);
+          },
+        });
+        return source;
+      });
+
+      // Store a reference to trigger - simulating what setInterval does
+      // This captures the trigger function at a point in time
+      let storedTriggerRef: (() => string | null) | null = null;
+
+      const output = { current: null };
+      render(
+        <Sampler output={output} src="https://example.com/sample.wav">
+          {({ trigger, isLoaded, playbackRate, setPlaybackRate }) => {
+            // On first render after load, capture the trigger function
+            // This simulates what the gate interval does when it's set up
+            if (isLoaded && !storedTriggerRef) {
+              storedTriggerRef = trigger;
+            }
+            return (
+              <>
+                <div data-testid="loaded">{String(isLoaded)}</div>
+                <div data-testid="rate">{playbackRate}</div>
+                <button data-testid="trigger-stored" onClick={() => storedTriggerRef?.()}>
+                  Trigger via stored ref
+                </button>
+                <button data-testid="setRate2" onClick={() => setPlaybackRate(2.0)}>Rate 2.0</button>
+              </>
+            );
+          }}
+        </Sampler>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('loaded')).toHaveTextContent('true');
+      });
+
+      // Clear any rates captured during setup
+      capturedPlaybackRates.length = 0;
+
+      // Trigger at default rate (1.0) using the stored reference
+      act(() => screen.getByTestId('trigger-stored').click());
+      expect(capturedPlaybackRates).toContain(1.0);
+
+      // Change rate to 2.0
+      act(() => screen.getByTestId('setRate2').click());
+      expect(screen.getByTestId('rate')).toHaveTextContent('2');
+
+      // Trigger again using the SAME stored reference (simulating gate interval behavior)
+      // With the bug, this would still use 1.0 because storedTriggerRef is stale
+      // With the fix (using triggerRef), this should use 2.0
+      capturedPlaybackRates.length = 0;
+      act(() => screen.getByTestId('trigger-stored').click());
+
+      // This assertion will FAIL if the bug exists (rate would be 1.0)
+      // and PASS if the fix works (rate would be 2.0)
+      expect(capturedPlaybackRates[0]).toBe(2.0);
+
+      // Restore original implementation
+      jest.restoreAllMocks();
+    });
   });
 
   // ============================================

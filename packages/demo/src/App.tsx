@@ -360,6 +360,7 @@ function ModularSynth() {
           {renderModuleButton('Microphone')}
           {renderModuleButton('MP3Deck')}
           {renderModuleButton('StreamingAudioDeck')}
+          {renderModuleButton('Sampler')}
         </div>
 
         <div className="module-category">

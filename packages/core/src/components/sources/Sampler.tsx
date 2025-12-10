@@ -245,6 +245,19 @@ export const Sampler = React.forwardRef<SamplerHandle, SamplerProps>(({
   const gateIntervalRef = useRef<number | null>(null);
   const lastGateStateRef = useRef(false);
 
+  // Refs for current parameter values - used by trigger function to avoid stale closures
+  // These are updated synchronously on each render so the trigger function always has current values
+  const playbackRateRef = useRef(playbackRate);
+  playbackRateRef.current = playbackRate;
+  const detuneRef = useRef(detune);
+  detuneRef.current = detune;
+  const loopRef = useRef(loop);
+  loopRef.current = loop;
+  const loopStartRef = useRef(loopStart);
+  loopStartRef.current = loopStart;
+  const loopEndRef = useRef(loopEnd);
+  loopEndRef.current = loopEnd;
+
   // Computed
   const isPlaying = activeVoices > 0;
 
@@ -328,11 +341,12 @@ export const Sampler = React.forwardRef<SamplerHandle, SamplerProps>(({
     const voiceGain = audioContext.createGain();
 
     source.buffer = audioBufferRef.current;
-    source.playbackRate.value = overrideRate ?? playbackRate;
-    source.detune.value = overrideDetune ?? detune;
-    source.loop = overrideLoop ?? loop;
-    source.loopStart = loopStart;
-    source.loopEnd = loopEnd;
+    // Read from refs to avoid stale closure issues with gate-triggered playback
+    source.playbackRate.value = overrideRate ?? playbackRateRef.current;
+    source.detune.value = overrideDetune ?? detuneRef.current;
+    source.loop = overrideLoop ?? loopRef.current;
+    source.loopStart = loopStartRef.current;
+    source.loopEnd = loopEndRef.current;
 
     voiceGain.gain.value = clampedVelocity;
 
@@ -370,7 +384,7 @@ export const Sampler = React.forwardRef<SamplerHandle, SamplerProps>(({
 
     onTrigger?.(voiceId);
     return voiceId;
-  }, [audioContext, enabled, maxPolyphony, voiceStealingMode, generateVoiceId, playbackRate, detune, loop, loopStart, loopEnd, cvTarget, onEnd, onTrigger]);
+  }, [audioContext, enabled, maxPolyphony, voiceStealingMode, generateVoiceId, cvTarget, onEnd, onTrigger]);
 
   // Trigger note (MIDI)
   const triggerNote = useCallback((
