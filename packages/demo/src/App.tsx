@@ -124,6 +124,9 @@ function ModularSynth() {
       ports.push({ id: `${id}-cv-gain`, type: 'input', label: 'CV' });
     } else if (type === 'ADSR') {
       ports.push({ id: `${id}-cv-gate`, type: 'input', label: 'Gate' });
+    } else if (type === 'Sampler') {
+      ports.push({ id: `${id}-cv-gate`, type: 'input', label: 'Gate' });
+      ports.push({ id: `${id}-cv-rate`, type: 'input', label: 'CV' });
     }
 
     // Create output ports based on definition
@@ -358,6 +361,7 @@ function ModularSynth() {
           {renderModuleButton('Microphone')}
           {renderModuleButton('MP3Deck')}
           {renderModuleButton('StreamingAudioDeck')}
+          {renderModuleButton('Sampler')}
         </div>
 
         <div className="module-category">
