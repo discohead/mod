@@ -7,6 +7,13 @@ node_modules/
 dist/
 build/
 
+# VitePress
+docs/.vitepress/cache/
+docs/.vitepress/dist/
+
+# Playground (demo build output)
+docs/public/playground/
+
 # Testing
 coverage/
 
